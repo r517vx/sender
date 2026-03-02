@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: sender-service
+  profiles:
+    default: dev
+
+server:
+  port: 8080
+
+sender:
+  timezone: Asia/Yekaterinburg
+  defaults:
+    dailyLimit: 20
+    minDelaySec: 90
+    maxDelaySec: 210
+    maxRetries: 2
+    sendWindow:
+      start: "09:30"
+      end: "18:30"
