@@ -2,9 +2,13 @@ package ru.mobilica.sender.controller;
 
 
 import jakarta.validation.Valid;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+
+import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.mobilica.sender.controller.dto.CreateCampaignRequest;
@@ -17,26 +21,21 @@ import ru.mobilica.sender.domain.entity.Recipient;
 import ru.mobilica.sender.repo.CampaignRepository;
 import ru.mobilica.sender.repo.MessageRepository;
 import ru.mobilica.sender.repo.RecipientRepository;
+import ru.mobilica.sender.repo.SuppressionRepository;
+import ru.mobilica.sender.service.SenderRunner;
 import ru.mobilica.sender.service.SenderWorker;
 
 @RestController
 @RequestMapping("/api")
+@AllArgsConstructor
 public class CampaignController {
 
     private final CampaignRepository campaignRepo;
     private final RecipientRepository recipientRepo;
     private final MessageRepository messageRepo;
-    private final SenderWorker worker;
+    private final SenderRunner runner;
+    private final SuppressionRepository suppressionRepo;
 
-    public CampaignController(CampaignRepository campaignRepo,
-                              RecipientRepository recipientRepo,
-                              MessageRepository messageRepo,
-                              SenderWorker worker) {
-        this.campaignRepo = campaignRepo;
-        this.recipientRepo = recipientRepo;
-        this.messageRepo = messageRepo;
-        this.worker = worker;
-    }
 
     @PostMapping("/campaigns")
     public Campaign createCampaign(@RequestBody @Valid CreateCampaignRequest req) {
@@ -72,40 +71,65 @@ public class CampaignController {
     public ResponseEntity<?> enqueue(@PathVariable Long id, @RequestBody EnqueueRequest req) {
         Campaign c = campaignRepo.findById(id).orElseThrow();
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-
         if (req.recipientIds() != null) {
             for (Long rid : req.recipientIds()) {
                 Recipient r = recipientRepo.findById(rid).orElseThrow();
-                upsertMessage(c, r, now);
+                upsertMessage(c, r);
             }
         }
         if (req.emails() != null) {
             for (String email : req.emails()) {
-                Recipient r = recipientRepo.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("Recipient not found: " + email));
-                upsertMessage(c, r, now);
+                Recipient r = recipientRepo.findByEmail(email)
+                        .orElseThrow(() -> new IllegalArgumentException("Recipient not found: " + email));
+                upsertMessage(c, r);
             }
         }
         return ResponseEntity.ok().build();
     }
 
-    private void upsertMessage(Campaign c, Recipient r, OffsetDateTime plannedAt) {
-        // Проще: пытаемся вставить через save и ловим unique violation позже.
-        // Для старта — простой путь: проверка существует/нет (можно оптимизировать).
-        boolean exists = messageRepo.countByCampaignIdAndStatusIn(c.getId(),
-                List.of(MessageStatus.PLANNED, MessageStatus.READY, MessageStatus.SENDING, MessageStatus.SENT, MessageStatus.RETRY_WAIT)) > 0;
-        // ↑ это грубо; лучше сделать репозиторий findByCampaignIdAndRecipientId.
-        // Но чтобы не раздувать сейчас — просто создадим и пусть unique constraint защитит.
-        Message m = new Message();
-        m.setCampaign(c);
-        m.setRecipient(r);
-        m.setStatus(MessageStatus.READY);
-        m.setPlannedAt(plannedAt);
-        messageRepo.save(m);
+    private void upsertMessage(Campaign c, Recipient r) {
+        // не пишем в suppression
+        if (suppressionRepo.existsByEmail(r.getEmail())) return;
+
+        OffsetDateTime plannedAt = nowUtc().plusSeconds(randomDelaySeconds(c));
+
+        messageRepo.findByCampaignIdAndRecipientId(c.getId(), r.getId())
+                .ifPresentOrElse(existing -> {
+                    // если уже отправлено — не трогаем
+                    if (existing.getStatus() == MessageStatus.SENT) return;
+
+                    // если было FAILED_FINAL/SUPPRESSED — тоже обычно не трогаем
+                    if (existing.getStatus() == MessageStatus.FAILED_FINAL || existing.getStatus() == MessageStatus.SUPPRESSED)
+                        return;
+
+                    // иначе перепланируем
+                    existing.setStatus(MessageStatus.READY);
+                    existing.setPlannedAt(plannedAt);
+                    existing.setLastErrorCode(null);
+                    existing.setLastErrorText(null);
+                }, () -> {
+                    Message m = new Message();
+                    m.setCampaign(c);
+                    m.setRecipient(r);
+                    m.setStatus(MessageStatus.READY);
+                    m.setPlannedAt(plannedAt);
+                    messageRepo.save(m);
+                });
     }
 
     @PostMapping("/sender/run-once")
-    public SenderWorker.RunResult runOnce(@RequestParam(defaultValue = "5") int batchSize) {
-        return worker.runOnce(batchSize);
+    public SenderRunner.RunResult runOnce(@RequestParam(defaultValue = "5") int batchSize) {
+        return runner.runOnce(batchSize);
+    }
+
+    private OffsetDateTime nowUtc() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    private long randomDelaySeconds(Campaign c) {
+        long min = c.getMinDelaySec();
+        long max = c.getMaxDelaySec();
+        if (max < min) max = min;
+        return ThreadLocalRandom.current().nextLong(min, max + 1);
     }
 }
