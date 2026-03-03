@@ -1,13 +1,8 @@
 package ru.mobilica.sender.controller;
 
 
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
-
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +18,10 @@ import ru.mobilica.sender.repo.MessageRepository;
 import ru.mobilica.sender.repo.RecipientRepository;
 import ru.mobilica.sender.repo.SuppressionRepository;
 import ru.mobilica.sender.service.SenderRunner;
-import ru.mobilica.sender.service.SenderWorker;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.concurrent.ThreadLocalRandom;
 
 @RestController
 @RequestMapping("/api")
@@ -68,41 +66,48 @@ public class CampaignController {
     }
 
     @PostMapping("/campaigns/{id}/enqueue")
+    @Transactional
     public ResponseEntity<?> enqueue(@PathVariable Long id, @RequestBody EnqueueRequest req) {
-        Campaign c = campaignRepo.findById(id).orElseThrow();
+
+        Campaign c = campaignRepo.lockById(id); // важно: FOR UPDATE
+
+        OffsetDateTime base = nowUtc();
+        if (c.getNextPlannedAt() != null && c.getNextPlannedAt().isAfter(base)) {
+            base = c.getNextPlannedAt();
+        }
 
         if (req.recipientIds() != null) {
             for (Long rid : req.recipientIds()) {
                 Recipient r = recipientRepo.findById(rid).orElseThrow();
-                upsertMessage(c, r);
+                base = upsertMessageQueued(c, r, base);
             }
         }
         if (req.emails() != null) {
             for (String email : req.emails()) {
                 Recipient r = recipientRepo.findByEmail(email)
                         .orElseThrow(() -> new IllegalArgumentException("Recipient not found: " + email));
-                upsertMessage(c, r);
+                base = upsertMessageQueued(c, r, base);
             }
         }
+
+        c.setNextPlannedAt(base);
+        // campaignRepo.save(c); // необязательно, т.к. managed entity в транзакции
         return ResponseEntity.ok().build();
     }
 
-    private void upsertMessage(Campaign c, Recipient r) {
-        // не пишем в suppression
-        if (suppressionRepo.existsByEmail(r.getEmail())) return;
+    private OffsetDateTime upsertMessageQueued(Campaign c, Recipient r, OffsetDateTime base) {
+        // suppression
+        if (suppressionRepo.existsByEmail(r.getEmail())) return base;
 
-        OffsetDateTime plannedAt = nowUtc().plusSeconds(randomDelaySeconds(c));
+        // следующий слот
+        OffsetDateTime plannedAt = base.plusSeconds(randomDelaySeconds(c));
 
         messageRepo.findByCampaignIdAndRecipientId(c.getId(), r.getId())
                 .ifPresentOrElse(existing -> {
-                    // если уже отправлено — не трогаем
                     if (existing.getStatus() == MessageStatus.SENT) return;
-
-                    // если было FAILED_FINAL/SUPPRESSED — тоже обычно не трогаем
                     if (existing.getStatus() == MessageStatus.FAILED_FINAL || existing.getStatus() == MessageStatus.SUPPRESSED)
                         return;
 
-                    // иначе перепланируем
                     existing.setStatus(MessageStatus.READY);
                     existing.setPlannedAt(plannedAt);
                     existing.setLastErrorCode(null);
@@ -115,6 +120,8 @@ public class CampaignController {
                     m.setPlannedAt(plannedAt);
                     messageRepo.save(m);
                 });
+
+        return plannedAt; // важно: base двигаем вперёд
     }
 
     @PostMapping("/sender/run-once")

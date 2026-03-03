@@ -58,5 +58,8 @@ public class Campaign {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "next_planned_at")
+    private OffsetDateTime nextPlannedAt;
+
 }
 
