@@ -13,6 +13,7 @@ import ru.mobilica.sender.domain.entity.Message;
 import ru.mobilica.sender.domain.entity.Suppression;
 import ru.mobilica.sender.repo.MessageRepository;
 import ru.mobilica.sender.repo.SuppressionRepository;
+import ru.mobilica.sender.util.CommonUtils;
 
 import java.time.*;
 import java.util.List;
@@ -22,6 +23,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class SenderRunner {
     private static final Logger log = LoggerFactory.getLogger(SenderWorker.class);
+    private static final Duration OVERDUE_GRACE = Duration.ofMinutes(3);
 
     private final MessageRepository messageRepo;
     private final SuppressionRepository suppressionRepo;
@@ -42,16 +44,29 @@ public class SenderRunner {
 
         int sent = 0, retry = 0, failed = 0;
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime nowUtc = nowUtc();
 
         // Переводим в SENDING (защита от дублей)
-        messageRepo.bulkMoveStatus(ids, MessageStatus.READY, MessageStatus.SENDING, now);
+        messageRepo.bulkMoveStatus(ids, MessageStatus.READY, MessageStatus.SENDING, nowUtc);
         // Примечание: записи, которые были RETRY_WAIT, останутся RETRY_WAIT; их можно обрабатывать без bulkMove,
         // но проще: выбирать только READY, а RETRY_WAIT переводить в READY отдельным джобом.
         // Для старта оставим READY.
 
         for (Message m : batch) {
             Campaign c = m.getCampaign();
+
+            OffsetDateTime pa = m.getPlannedAt();
+            if (pa != null && pa.isBefore(nowUtc.minus(OVERDUE_GRACE))) {
+                // Сервис долго был оффлайн / окно пропущено — НЕ отправляем сразу.
+                OffsetDateTime newPlanned = nextSlotPlannedAt(c, nowUtc);
+                m.setStatus(MessageStatus.READY);       // важно: возвращаем из SENDING обратно
+                m.setPlannedAt(newPlanned);
+
+                log.info("Rescheduled overdue messageId={} oldPlannedAt={} newPlannedAt={}",
+                        m.getId(), pa, newPlanned);
+                continue;
+            }
+
             if (c.getStatus() != CampaignStatus.ACTIVE) {
                 // вернем обратно
                 m.setStatus(MessageStatus.READY);
@@ -174,5 +189,16 @@ public class SenderRunner {
     }
 
     public record RunResult(int sent, int retryScheduled, int failedFinal) {
+    }
+
+    // планируем следующий слот по кампании (гарантирует разрыв minDelay..maxDelay)
+    private OffsetDateTime nextSlotPlannedAt(Campaign c, OffsetDateTime nowUtc) {
+        OffsetDateTime base = nowUtc;
+        if (c.getNextPlannedAt() != null && c.getNextPlannedAt().isAfter(base)) {
+            base = c.getNextPlannedAt();
+        }
+        OffsetDateTime planned = base.plusSeconds(CommonUtils.randomDelaySeconds(c)).withNano(0);
+        c.setNextPlannedAt(planned);
+        return planned;
     }
 }

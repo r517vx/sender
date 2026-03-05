@@ -18,6 +18,7 @@ import ru.mobilica.sender.repo.MessageRepository;
 import ru.mobilica.sender.repo.RecipientRepository;
 import ru.mobilica.sender.repo.SuppressionRepository;
 import ru.mobilica.sender.service.SenderRunner;
+import ru.mobilica.sender.util.CommonUtils;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -100,7 +101,7 @@ public class CampaignController {
         if (suppressionRepo.existsByEmail(r.getEmail())) return base;
 
         // следующий слот
-        OffsetDateTime plannedAt = base.plusSeconds(randomDelaySeconds(c));
+        OffsetDateTime plannedAt = base.plusSeconds(CommonUtils.randomDelaySeconds(c));
 
         messageRepo.findByCampaignIdAndRecipientId(c.getId(), r.getId())
                 .ifPresentOrElse(existing -> {
@@ -131,12 +132,5 @@ public class CampaignController {
 
     private OffsetDateTime nowUtc() {
         return OffsetDateTime.now(ZoneOffset.UTC);
-    }
-
-    private long randomDelaySeconds(Campaign c) {
-        long min = c.getMinDelaySec();
-        long max = c.getMaxDelaySec();
-        if (max < min) max = min;
-        return ThreadLocalRandom.current().nextLong(min, max + 1);
     }
 }
