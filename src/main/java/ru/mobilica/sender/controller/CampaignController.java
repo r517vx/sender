@@ -17,11 +17,13 @@ import ru.mobilica.sender.repo.CampaignRepository;
 import ru.mobilica.sender.repo.MessageRepository;
 import ru.mobilica.sender.repo.RecipientRepository;
 import ru.mobilica.sender.repo.SuppressionRepository;
+import ru.mobilica.sender.service.CampaignService;
 import ru.mobilica.sender.service.SenderRunner;
 import ru.mobilica.sender.util.CommonUtils;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 @RestController
@@ -34,6 +36,7 @@ public class CampaignController {
     private final MessageRepository messageRepo;
     private final SenderRunner runner;
     private final SuppressionRepository suppressionRepo;
+    private final CampaignService campaignService;
 
 
     @PostMapping("/campaigns")
@@ -128,6 +131,21 @@ public class CampaignController {
     @PostMapping("/sender/run-once")
     public SenderRunner.RunResult runOnce(@RequestParam(defaultValue = "5") int batchSize) {
         return runner.runOnce(batchSize);
+    }
+
+    @PostMapping("/campaigns/{id}/enqueue-by-source")
+    public Map<String, Object> enqueueBySource(
+            @PathVariable Long id,
+            @RequestParam String source
+    ) {
+
+        int inserted = campaignService.enqueueBySource(id, source);
+
+        return Map.of(
+                "campaignId", id,
+                "source", source,
+                "messagesCreated", inserted
+        );
     }
 
     private OffsetDateTime nowUtc() {

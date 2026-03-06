@@ -47,3 +47,42 @@ POST `http://localhost:8080/api/sender/run-once?batchSize=1`
     "failedFinal": 0
 }
 ```
+
+## Как импортировать через Postman
+
+Method: POST
+
+URL: `http://localhost:8080/api/recipients/import?source=xls_arc_serv`
+
+`Body → form-data`
+
+`key: file (type File)`
+
+`value: выбираешь emails.csv`
+
+`Send`
+
+Ответ будет типа:
+```json
+{
+"totalLines": 775,
+"validEmails": 655,
+"inserted": 655,
+"duplicates": 120,
+"invalid": 0
+}
+```
+(цифры будут зависеть от того, есть ли уже записи в БД)
+
+## Добавление в рассылочную компанию по источнику
+
+POST `http://localhost:8080/api/campaigns/1/enqueue-by-source?source=xls_march`\
+
+Ответ:
+```json
+{
+  "campaignId": 1,
+  "source": "xls_march",
+  "messagesCreated": 655
+}
+```

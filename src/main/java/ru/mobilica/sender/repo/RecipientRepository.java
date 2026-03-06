@@ -7,4 +7,5 @@ import ru.mobilica.sender.domain.entity.Recipient;
 
 public interface RecipientRepository extends JpaRepository<Recipient, Long> {
     Optional<Recipient> findByEmail(String email);
+    boolean existsByEmail(String email);
 }

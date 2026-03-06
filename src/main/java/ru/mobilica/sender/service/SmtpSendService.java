@@ -17,7 +17,6 @@ public class SmtpSendService {
         MimeMessage msg = mailSender.createMimeMessage();
         MimeMessageHelper h = new MimeMessageHelper(msg, "UTF-8");
         msg.addHeader("List-Unsubscribe", "<mailto:hello@mobilica.ru?subject=unsubscribe>");
-        msg.addHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
         msg.setHeader("Message-ID", "<" + java.util.UUID.randomUUID() + "@mobilica.ru>");
         h.setFrom(from);
         if (replyTo != null && !replyTo.isBlank()) h.setReplyTo(replyTo);

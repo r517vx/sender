@@ -24,24 +24,30 @@ public class EmailComposerService {
         List<Template> greet = templateRepo.findByCampaignIdAndTypeAndEnabledTrue(c.getId(), TemplateType.GREETING);
         List<Template> open = templateRepo.findByCampaignIdAndTypeAndEnabledTrue(c.getId(), TemplateType.OPENING);
         List<Template> body = templateRepo.findByCampaignIdAndTypeAndEnabledTrue(c.getId(), TemplateType.BODY);
+        List<Template> sign = templateRepo.findByCampaignIdAndTypeAndEnabledTrue(c.getId(), TemplateType.SIGNATURE);
 
         // Минимальные дефолты на случай пустой базы
         String subjectT = subj.isEmpty() ? "Быстрый вопрос" : picker.pick(subj).getContent();
         String greetT   = greet.isEmpty() ? "{{firstName}}, добрый день." : picker.pick(greet).getContent();
         String openT    = open.isEmpty() ? "Пишу по делу, займет минуту." : picker.pick(open).getContent();
         String bodyT    = body.isEmpty() ? "Коротко: мы проверяем интерес к продукту. Можно 1 вопрос?" : picker.pick(body).getContent();
+        String sigT    = sign.isEmpty() ? "Спасибо за ваше время.\n" +
+                "Хорошего дня!\n" +
+                "\n" +
+                "Алексей." : picker.pick(sign).getContent();
 
         String subject = renderer.render(subjectT, r, Map.of());
         String greeting = renderer.render(greetT, r, Map.of());
         String opening  = renderer.render(openT, r, Map.of());
         String bodyText = renderer.render(bodyT, r, Map.of());
+        String singText = renderer.render(sigT, r, Map.of());
 
         // Сильно рекомендую начинать с plain text (без HTML), чтобы выглядеть как “человеческое” письмо
         String text = String.join("\n\n",
                 greeting.trim(),
                 opening.trim(),
                 bodyText.trim(),
-                signature(c)
+                singText.trim()
         ).trim();
 
         // variantJson можно потом положить: какие шаблоны выбраны
@@ -50,10 +56,10 @@ public class EmailComposerService {
         return new ComposedEmail(subject, text, variantJson);
     }
 
-    private String signature(Campaign c) {
-        // Можно вынести в шаблон, но для старта — так
-        return "—\nЛев\nmobilica.ru\nЕсли неактуально — ответьте «стоп», и я больше не напишу.";
-    }
+//    private String signature(Campaign c) {
+//        // Можно вынести в шаблон, но для старта — так
+//        return "—\nЛев\nmobilica.ru\nЕсли неактуально — ответьте «стоп», и я больше не напишу.";
+//    }
 
     private String escape(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");

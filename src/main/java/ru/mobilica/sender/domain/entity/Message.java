@@ -52,7 +52,7 @@ public class Message {
     @Column(name = "smtp_message_id")
     private String smtpMessageId;
 
-    @Column(name = "variant_json", columnDefinition = "jsonb")
+    @Column(name = "variant_json", columnDefinition = "text")
     private String variantJson;
 
     @CreationTimestamp

@@ -1,5 +1,6 @@
 package ru.mobilica.sender.repo;
 
+import jakarta.transaction.Transactional;
 import ru.mobilica.sender.domain.*;
 
 import java.time.OffsetDateTime;
@@ -24,7 +25,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             """, nativeQuery = true)
     List<Message> lockBatchReady(@Param("limit") int limit);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("""
             update Message m
             set m.status = :toStatus, m.updatedAt = :now
@@ -54,4 +55,27 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     List<Message> findAllWithCampaignAndRecipient(@Param("ids") List<Long> ids);
 
     Optional<Message> findByCampaignIdAndRecipientId(Long campaignId, Long recipientId);
+
+    @Modifying
+    @Transactional
+    @Query(value = """
+INSERT INTO messages (campaign_id, recipient_id, status, planned_at, attempts)
+SELECT
+    :campaignId,
+    r.id,
+    'READY',
+    now(),
+    0
+FROM recipients r
+WHERE r.source = :source
+AND NOT EXISTS (
+    SELECT 1 FROM messages m
+    WHERE m.campaign_id = :campaignId
+    AND m.recipient_id = r.id
+)
+""", nativeQuery = true)
+    int enqueueBySource(
+            @Param("campaignId") Long campaignId,
+            @Param("source") String source
+    );
 }
