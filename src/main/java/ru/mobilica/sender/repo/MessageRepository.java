@@ -1,16 +1,16 @@
 package ru.mobilica.sender.repo;
 
-import jakarta.transaction.Transactional;
-import ru.mobilica.sender.domain.*;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import ru.mobilica.sender.domain.MessageStatus;
+import ru.mobilica.sender.domain.entity.Message;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
-
-import org.springframework.data.jpa.repository.*;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-import ru.mobilica.sender.domain.entity.Message;
 
 @Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
@@ -56,26 +56,4 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     Optional<Message> findByCampaignIdAndRecipientId(Long campaignId, Long recipientId);
 
-    @Modifying
-    @Transactional
-    @Query(value = """
-INSERT INTO messages (campaign_id, recipient_id, status, planned_at, attempts)
-SELECT
-    :campaignId,
-    r.id,
-    'READY',
-    now(),
-    0
-FROM recipients r
-WHERE r.source = :source
-AND NOT EXISTS (
-    SELECT 1 FROM messages m
-    WHERE m.campaign_id = :campaignId
-    AND m.recipient_id = r.id
-)
-""", nativeQuery = true)
-    int enqueueBySource(
-            @Param("campaignId") Long campaignId,
-            @Param("source") String source
-    );
 }
