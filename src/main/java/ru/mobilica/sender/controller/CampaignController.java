@@ -82,7 +82,7 @@ public class CampaignController {
 
         if (req.recipientIds() != null) {
             for (Long rid : req.recipientIds()) {
-                Recipient r = recipientRepo.findById(rid).orElseThrow();
+                Recipient r = recipientRepo.findById(rid).orElseThrow(() -> new IllegalArgumentException("Recipient ID not found: " + rid));
                 base = upsertMessageQueued(c, r, base);
             }
         }

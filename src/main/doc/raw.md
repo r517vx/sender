@@ -24,6 +24,7 @@ POST `http://localhost:8080/api/recipients`
 ___
 ## Активировать рассылку
 POST `http://localhost:8080/api/campaigns/1/activate`
+
 Рассылка перейдёт из состояния `DRAFT` в состояние `ACTIVE`
 ___
 ## Добавить к рассылке получателей
@@ -76,7 +77,7 @@ URL: `http://localhost:8080/api/recipients/import?source=xls_arc_serv`
 
 ## Добавление в рассылочную компанию по источнику
 
-POST `http://localhost:8080/api/campaigns/1/enqueue-by-source?source=xls_march`\
+POST `http://localhost:8080/api/campaigns/1/enqueue-by-source?source=xls_march`
 
 Ответ:
 ```json
