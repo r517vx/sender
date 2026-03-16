@@ -11,7 +11,7 @@ public class SenderWorker {
 
     private final SenderRunner runner;
 
-    //@Scheduled(fixedDelayString = "PT5S")
+    @Scheduled(fixedDelayString = "PT5S")
     public void tick() {
         // в проде можно сделать “тише”; в dev удобно часто
         runner.runOnce(1);

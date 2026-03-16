@@ -74,13 +74,14 @@ public class SenderRunner {
             }
             if (!isWithinSendWindow(c)) {
                 m.setStatus(MessageStatus.READY);
-                // перенесем на начало окна завтра/сегодня
-                m.setPlannedAt(nextWindowStart(c));
+                OffsetDateTime windowStart = nextWindowStart(c);
+                m.setPlannedAt(nextSlotPlannedAtFrom(c, windowStart));
                 continue;
             }
             if (messageRepo.countSentToday(c.getId()) >= c.getDailyLimit()) {
                 m.setStatus(MessageStatus.READY);
-                m.setPlannedAt(nextDayWindowStart(c));
+                OffsetDateTime nextDayStart = nextDayWindowStart(c);
+                m.setPlannedAt(nextSlotPlannedAtFrom(c, nextDayStart));
                 continue;
             }
 
@@ -142,6 +143,16 @@ public class SenderRunner {
 
         // JPA flush на выходе из @Transactional
         return new SenderRunner.RunResult(sent, retry, failed);
+    }
+
+    private OffsetDateTime nextSlotPlannedAtFrom(Campaign c, OffsetDateTime baseTime) {
+        OffsetDateTime base = baseTime;
+        if (c.getNextPlannedAt() != null && c.getNextPlannedAt().isAfter(base)) {
+            base = c.getNextPlannedAt();
+        }
+        OffsetDateTime planned = base.plusSeconds(CommonUtils.randomDelaySeconds(c)).withNano(0);
+        c.setNextPlannedAt(planned);
+        return planned;
     }
 
     private boolean isWithinSendWindow(Campaign c) {
